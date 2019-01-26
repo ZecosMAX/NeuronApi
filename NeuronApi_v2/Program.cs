@@ -8,12 +8,12 @@ namespace NeuronApi_v2
         static void Main(string[] args)
         {
             int InputsCount = 2;
-
             int[] HiddensCount = { 2, 2 };
-
             int OutputsCount = 1;
+            float Epsilon = 0.7f;
+            float Alpha = 0.3f;
 
-            Brain brain = new Brain(InputsCount, OutputsCount, HiddensCount);
+            Brain brain = new Brain(InputsCount, OutputsCount, HiddensCount, Epsilon, Alpha);
 
             float[] inputs = { -0.4534345f, 0.853431287f };
             float[] perfects = { 0.2f };
@@ -34,10 +34,14 @@ namespace NeuronApi_v2
             //brain.DrawOutputs();
             Console.WriteLine("Outputs is: ");
             Console.WriteLine("\t" + string.Join("\n\t", brain.GetOutput()));
+            Console.WriteLine("\nError is: {0}%\n\n", error * 100);
 
-            Console.WriteLine("\nError is: {0}%", error * 100);
-
-            brain.DoTraining(perfects);
+            error = brain.DoIteration(perfects);
+            //brain.CheckInputOfOutputs();
+            //brain.DrawOutputs();
+            Console.WriteLine("Outputs is: ");
+            Console.WriteLine("\t" + string.Join("\n\t", brain.GetOutput()));
+            Console.WriteLine("\nError is: {0}%\n\n", error * 100);
 
         }
     }
@@ -63,17 +67,18 @@ namespace NeuronApi_v2
     class Neuron
     {
         protected string type;
-        private float InputValue;
-        private float OutputValue;
+        protected float InputValue;
+        protected float OutputValue;
+        protected float Delta;
 
-        Func<float, float> CustomActivation;
-        private bool isCustomFunction = false;
+        protected Func<float, float> CustomActivation;
+        protected bool isCustomFunction = false;
 
         public Neuron()
         {
             this.type = "neuron";
         }
-        private static float Activation(float x)
+        protected static float Activation(float x)
         {
             return 1.0f / (1 + MathF.Pow(MathF.E, x));
         }
@@ -81,7 +86,14 @@ namespace NeuronApi_v2
         {
             return (1.0f - x) * x;
         }
-
+        public void SetDelta(float delta)
+        {
+            this.Delta = delta;
+        }
+        public float GetDelta()
+        {
+            return this.Delta;
+        }
         public void SetCustomActivation(Func<float, float> func)
         {
             CustomActivation = func;
@@ -125,6 +137,7 @@ namespace NeuronApi_v2
         private readonly Neuron Source;
         private readonly Neuron Destination;
 
+        private float PreviousDeltaWeight = 0.0f;
         private float WeightValue;
 
         public Synapse(Neuron s, Neuron d)
@@ -141,6 +154,14 @@ namespace NeuronApi_v2
         public Neuron GetSource()
         {
             return Source;
+        }
+        public float GetPreviousDelta()
+        {
+            return PreviousDeltaWeight;
+        }
+        public void SetPreviousDelta(float val)
+        {
+            this.PreviousDeltaWeight = val;
         }
         public void TransferValue()
         {
@@ -172,7 +193,10 @@ namespace NeuronApi_v2
     class Brain
     {
         List<Neuron> Neurons = new List<Neuron>();
-        List<Synapse> Synapses = new List<Synapse>(); 
+        List<Synapse> Synapses = new List<Synapse>();
+
+        float Epsilon = 0; //Speed of learning
+        float Alpha = 0; //Weight momentum
 
         int Inputs;
         float InputBiasValue;
@@ -180,7 +204,7 @@ namespace NeuronApi_v2
         float[] HiddensBiasValue;
         int Outputs;
 
-        public Brain(int InputCount, int OutputCount, int[] HiddensCount)
+        public Brain(int InputCount, int OutputCount, int[] HiddensCount, float e, float a)
         {
             this.Inputs = InputCount;
             this.Hiddens = HiddensCount;
@@ -312,7 +336,9 @@ namespace NeuronApi_v2
             //{
             //    Synapses[firstSynapsesCount + hiddenSynapsesProceed + i].TransferValue();
             //}
-            return this.GetIterationError(perfect);
+            float error = this.GetIterationError(perfect);
+            this.DoTraining(perfect);
+            return error;
         }
         public void CheckInputOfOutputs()
         {
@@ -350,24 +376,76 @@ namespace NeuronApi_v2
         public void DoTraining(float[] perfect)
         {
             float[] OutputDeltas = GetDeltaO(perfect);
+            Neuron[] previousLayer = null;
             for (int i = Hiddens.Length; i > 0; i--)
             {
                 Neuron[] iThLayer = Neurons.Where((n) => { return n.GetNeuronType().Contains("hiddenneuron_" + (i - 1)); }).ToArray();
 
                 for (int j = 0; j < iThLayer.Length; j++)
                 {
-                    Synapse[] synapses = Synapses.Where((s) => { return s.GetSource().Equals(iThLayer[i]); }).ToArray();
-                    for (int k = 0; k < synapses.Length; k++)
+                    Synapse[] synapses = Synapses.Where((s) => { return s.GetSource().Equals(iThLayer[j]); }).ToArray();
+                    float wSum = 0;
+                    if (i == Hiddens.Length) //this means this is the last hidden layer
                     {
-                        if(i == Hiddens.Length)
+                        for (int k = 0; k < synapses.Length; k++)
                         {
-                            synapses[k].GetWeight() //остановился на моменте, где нужно подсчитать дельту первого слоя скрытых нейронов
+                            wSum += synapses[k].GetWeight() * OutputDeltas[k];
+                        }
+                        float currentNeuronDelta = Neuron.Derrivative(iThLayer[j].GetOutput()) * wSum; //Calculated delta for a neuron
+                        iThLayer[j].SetDelta(currentNeuronDelta);
+
+                        //Starting to update all the synapses, which is originated from this neuron
+                        for (int k = 0; k < synapses.Length; k++)
+                        {
+                            //Synapse gradient is output of neuron at the start of synapse multiplyed by delta of a neuron at the end of synapse
+                            float synapseGradient = synapses[k].GetSource().GetOutput() * OutputDeltas[k]; 
+                            float deltaWeight = Epsilon * synapseGradient + Alpha * synapses[k].GetPreviousDelta(); //DeltaW = E*Grad + A*(Previous change)
+                            synapses[k].SetPreviousDelta(deltaWeight);
+                            synapses[k].SetWeight(synapses[k].GetWeight() + deltaWeight);
+                        }
+                    }
+                    else
+                    {
+                        for (int k = 0; k < synapses.Length; k++) //also, count of synapses, originated from this neuron @ iThLayer[j] is equal to count of neurons of next layer (previous in this context)
+                        {
+                            wSum += synapses[k].GetWeight() * previousLayer[k].GetDelta(); //good thing, that i saved previous layer into array to get deltas
+                        }
+                        float currentNeuronDelta = Neuron.Derrivative(iThLayer[j].GetOutput()) * wSum;
+                        iThLayer[j].SetDelta(currentNeuronDelta);
+
+                        //Starting to update all the synapses, which is originated from this neuron
+                        for (int k = 0; k < synapses.Length; k++)
+                        {
+                            //Synapse gradient is output of neuron at the start of synapse multiplyed by delta of a neuron at the end of synapse
+                            float synapseGradient = synapses[k].GetSource().GetOutput() * previousLayer[k].GetDelta();
+                            float deltaWeight = Epsilon * synapseGradient + Alpha * synapses[k].GetPreviousDelta(); //DeltaW = E*Grad + A*(Previous change)
+                            synapses[k].SetPreviousDelta(deltaWeight);
+                            synapses[k].SetWeight(synapses[k].GetWeight() + deltaWeight);
                         }
                     }
                 }
-
-                Console.WriteLine("Trained {0}th layer, size: {1} ", i, iThLayer.Length);
+                previousLayer = iThLayer;
+                Console.WriteLine("Trained {0}th HIDDEN layer, size: {1} ", i, iThLayer.Length);
+                
             }
+            //at this point, previousLayer is array, which contains 1st layer of hidden section, so we can do the same thing for input neurons
+            Neuron[] inputLayer = Neurons.Where((n) => { return n.GetNeuronType().Contains("inputneuron"); }).ToArray();
+            for (int i = 0; i < inputLayer.Length; i++)
+            {
+                Synapse[] synapses = Synapses.Where((s) => { return s.GetSource().Equals(inputLayer[i]); }).ToArray();
+
+                //we don't really need to set delta of input layer, like, at all
+                //because input layer has no synapses "behind" it, and so delta won't be used
+
+                for (int j = 0; j < synapses.Length; j++)
+                { 
+                    float synapseGradient = synapses[j].GetSource().GetOutput() * previousLayer[j].GetDelta(); //Calculated gradient
+                    float deltaWeight = Epsilon * synapseGradient + Alpha * synapses[j].GetPreviousDelta(); //DeltaW = E*Grad + A*(Previous change)
+                    synapses[j].SetPreviousDelta(deltaWeight);
+                    synapses[j].SetWeight(synapses[j].GetWeight() + deltaWeight);
+                }
+            }
+            Console.WriteLine("Trained input layer");
         }
         private float[] GetDeltaO(float[] perfect)
         {
