@@ -1,6 +1,7 @@
 # NeuronApi
 
 Not really an API, but a well-made neuron toy for myself
+
 You can specify a lot of things, starting from count of neurons for layers 
 to custom activation function of every single neuron out there
 
