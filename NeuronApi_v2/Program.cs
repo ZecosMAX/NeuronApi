@@ -1,48 +1,90 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace NeuronApi_v2
 {
     class Program {
+        public static readonly Random random = new Random();
         static void Main(string[] args)
         {
             int InputsCount = 2;
-            int[] HiddensCount = { 2, 2 };
+            int[] HiddensCount = { 2 };
             int OutputsCount = 1;
-            float Epsilon = 0.7f;
-            float Alpha = 0.3f;
+            float Epsilon = 0.01f;
+            float Alpha = 0.01f;
 
             Brain brain = new Brain(InputsCount, OutputsCount, HiddensCount, Epsilon, Alpha);
 
-            float[] inputs = { -0.4534345f, 0.853431287f };
-            float[] perfects = { 0.2f };
+            Console.Write("\nNeural network is seems to be inited, proceed? (y/n): ");
+            var ans = Console.ReadLine();
+            switch (ans.ToLower())
+            {
+                case "y":
+                    break;
+                case "n":
+                    return;
+                    break;
+            }
+            Console.Clear();
+            Console.Write("Please, enter count of iterations to train: ");
+            var iterations = int.Parse(Console.ReadLine());
+            Console.Clear();
 
-            //float[] inputs = {
-            //    8.0f / 8.0f,
-            //    7.0f / 8.0f,
-            //    6.0f / 8.0f,
-            //    5.0f / 8.0f,
-            //    4.0f / 8.0f,
-            //    3.0f / 8.0f,
-            //    2.0f / 8.0f,
-            //    1.0f / 8.0f };
+            for (int i = 0; i < iterations; i++)
+            {
+                Console.WriteLine("{0} out of {1} ({2}% done)\t\t", i, iterations, 100 * (float)i / iterations);
 
-            brain.SetInput(inputs);
-            float error = brain.DoIteration(perfects);
-            //brain.CheckInputOfOutputs();
-            //brain.DrawOutputs();
-            Console.WriteLine("Outputs is: ");
-            Console.WriteLine("\t" + string.Join("\n\t", brain.GetOutput()));
-            Console.WriteLine("\nError is: {0}%\n\n", error * 100);
+                //initing inputs and perfects values
+                int first = random.Next(0, 2);
+                int second = random.Next(0, 2);
 
-            error = brain.DoIteration(perfects);
-            //brain.CheckInputOfOutputs();
-            //brain.DrawOutputs();
-            Console.WriteLine("Outputs is: ");
-            Console.WriteLine("\t" + string.Join("\n\t", brain.GetOutput()));
-            Console.WriteLine("\nError is: {0}%\n\n", error * 100);
+                int perfect = first ^ second;
 
+                float[] inputs = { first, second };
+                float[] perfects = { perfect };
+
+                float error = brain.DoIteration(perfects, inputs);
+                brain.DrawOutputs();
+                Console.WriteLine("Inputs: {0}, {1}", first, second);
+                Console.WriteLine("XOR result: {0}", perfect);
+                Console.WriteLine();
+                Console.WriteLine("Outputs is: ");
+                Console.WriteLine("\t" + string.Join("\n\t", brain.GetOutput()) + "\t\t");
+                Console.WriteLine("\nError is: {0}%\t\t\n\n", error * 100);
+                Console.SetCursorPosition(0, 0);
+                //Thread.Sleep(10);
+                brain.ClearInputs();
+            }
+
+            Console.Clear();
+            Console.WriteLine("Go and try it out!");
+            Console.ReadLine();
+            while(true)
+            {
+                Console.SetCursorPosition(0, 1);
+                Console.Write("Enter first value: ");
+                int first = int.Parse(Console.ReadLine());
+                Console.Write("Enter second value: ");
+                int second = int.Parse(Console.ReadLine());
+
+                int perfect = first ^ second;
+
+                float[] inputs = { first, second };
+                float[] perfects = { perfect };
+
+                float error = brain.DoProbe(perfects, inputs);
+                brain.DrawOutputs();
+                Console.WriteLine("Inputs: {0}, {1}", first, second);
+                Console.WriteLine("XOR result: {0}", perfect);
+                Console.WriteLine();
+                Console.WriteLine("Outputs is: ");
+                Console.WriteLine("\t" + string.Join("\n\t", brain.GetOutput()) + "\t\t");
+                Console.WriteLine("\nError is: {0}%\t\t\n\n", error * 100);
+                //Thread.Sleep(10);
+                brain.ClearInputs();
+            }
         }
     }
 
@@ -80,11 +122,11 @@ namespace NeuronApi_v2
         }
         protected static float Activation(float x)
         {
-            return 1.0f / (1 + MathF.Pow(MathF.E, x));
+            return 1.0f / (1.0f + MathF.Pow(MathF.E, -x));
         }
         public static float Derrivative(float x)
         {
-            return (1.0f - x) * x;
+            return (1.0f - Activation(x)) * Activation(x);
         }
         public void SetDelta(float delta)
         {
@@ -94,6 +136,7 @@ namespace NeuronApi_v2
         {
             return this.Delta;
         }
+        
         public void SetCustomActivation(Func<float, float> func)
         {
             CustomActivation = func;
@@ -123,6 +166,10 @@ namespace NeuronApi_v2
         {
             return InputValue;
         }
+        public void ClearInput()
+        {
+            this.InputValue = 0;
+        }
         public void SetNeuronType(string s)
         {
             this.type = s;
@@ -144,7 +191,7 @@ namespace NeuronApi_v2
         {
             this.Source = s;
             this.Destination = d;
-            WeightValue = (float)new Random().NextDouble();
+            WeightValue = (float)Program.random.NextDouble();
             Console.WriteLine("Weight Value is: {0}", WeightValue);
         }
         public Neuron GetDest()
@@ -183,6 +230,7 @@ namespace NeuronApi_v2
         }
         public void SetWeight(float w)
         {
+            //Console.WriteLine("Preivous weight: {0}\nNew weight: {1}", WeightValue, w);
             WeightValue = w;
         }
         public float GetWeight()
@@ -209,6 +257,9 @@ namespace NeuronApi_v2
             this.Inputs = InputCount;
             this.Hiddens = HiddensCount;
             this.Outputs = OutputCount;
+
+            this.Epsilon = e;
+            this.Alpha = a;
 
             //adding input neurons
             //last one is the bias
@@ -310,34 +361,33 @@ namespace NeuronApi_v2
         {
             if(inputs != null)
             {
+                //Console.WriteLine(true);
                 SetInput(inputs);
             }
-
             for (int i = 0; i < Synapses.Count; i++)
             {
                 Synapses[i].TransferValue();
             }
-            //int firstSynapsesCount = Inputs * Hiddens[0];
-            //for (int i = 0; i < firstSynapsesCount; i++)
-            //{
-            //    Synapses[i].TransferValue();
-            //}
-            //int hiddenSynapsesProceed = 0;
-            //for (int i = 0; i < Hiddens.Length - 1; i++)
-            //{
-            //    int HS = Hiddens[i] * Hiddens[i + 1];
-            //    hiddenSynapsesProceed += HS;
 
-            //    Synapses[firstSynapsesCount + i].TransferValue();
-            //}
-
-            //int lastSynapsesCount = Outputs * Hiddens[Hiddens.Length - 1];
-            //for (int i = 0; i < lastSynapsesCount; i++)
-            //{
-            //    Synapses[firstSynapsesCount + hiddenSynapsesProceed + i].TransferValue();
-            //}
             float error = this.GetIterationError(perfect);
             this.DoTraining(perfect);
+
+            return error;
+        }
+        public float DoProbe(float[] perfect, float[] inputs = null)
+        {
+            if (inputs != null)
+            {
+                //Console.WriteLine(true);
+                SetInput(inputs);
+            }
+            for (int i = 0; i < Synapses.Count; i++)
+            {
+                Synapses[i].TransferValue();
+            }
+
+            float error = this.GetIterationError(perfect);
+
             return error;
         }
         public void CheckInputOfOutputs()
@@ -351,8 +401,17 @@ namespace NeuronApi_v2
         {
             foreach (var neuron in Neurons)
             {
-                if(neuron.GetNeuronType() != "biasneuron")
-                    Console.WriteLine("Output of an neuron is {0}", neuron.GetOutput());
+                if(!neuron.GetNeuronType().Contains("biasneuron"))
+                    Console.WriteLine("Output of an neuron ({1}) is {0} and his input: {2}\t\t", neuron.GetOutput(), neuron.GetNeuronType(), neuron.GetInput());
+                else
+                    Console.WriteLine("Output of an bias neuron is {0}", (neuron as BiasNeuron).GetBiasOutput());
+            }
+        }
+        public void ClearInputs()
+        {
+            foreach (var neuron in Neurons)
+            {
+                neuron.ClearInput(); //Because of architecute, i need to clean all input values after performing an iteration
             }
         }
         public float GetIterationError(float[] perfect)
@@ -433,6 +492,7 @@ namespace NeuronApi_v2
             for (int i = 0; i < inputLayer.Length; i++)
             {
                 Synapse[] synapses = Synapses.Where((s) => { return s.GetSource().Equals(inputLayer[i]); }).ToArray();
+                
 
                 //we don't really need to set delta of input layer, like, at all
                 //because input layer has no synapses "behind" it, and so delta won't be used
