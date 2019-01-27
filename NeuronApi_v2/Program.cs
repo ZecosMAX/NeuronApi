@@ -10,10 +10,10 @@ namespace NeuronApi_v2
         static void Main(string[] args)
         {
             int InputsCount = 2;
-            int[] HiddensCount = { 2 };
+            int[] HiddensCount = { 4, 4 };
             int OutputsCount = 1;
-            float Epsilon = 0.01f;
-            float Alpha = 0.01f;
+            float Epsilon = 0.7f;
+            float Alpha = 0.3f;
 
             Brain brain = new Brain(InputsCount, OutputsCount, HiddensCount, Epsilon, Alpha);
 
